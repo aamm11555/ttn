@@ -1,101 +1,146 @@
 name: ttn
 on:
   workflow_dispatch:
+
 jobs:
-  secure-rdp:
+  secure-macos:
     runs-on: macos-latest
     timeout-minutes: 3600
+
     steps:
-      - name: Ownership Verification (Encoded)
-        run: |
-          $encodedNotice = "Cj09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PQogQ29weXJpZ2h0IMKpIDIwMjUgVG9vbGJveExhcC54eXogfCBodHRwczovL3d3dy50b29sYm94bGFwLnh5ei8KIEFsbCByaWdodHMgcmVzZXJ2ZWQuIERvIG5vdCByZW1vdmUgb3IgbW9kaWZ5IGNvcHlyaWdodCB0ZXh0LgogWW91VHViZTogaHR0cHM6Ly93d3cueW91dHViZS5jb20vY2hhbm5lbC9VQ0RUNGZzOUp3cm5RSVhQclhYOHlIZVEKIEZhY2Vib29rOiBodHRwczovL3d3dy5mYWNlYm9vay5jb20vcHJvZmlsZS5waHA/aWQ9NjE1Njc4OTY2OTI5OTQKIEFueSBjaGFuZ2VzIHdpbGwgYXV0b21hdGljYWxseSBkaXNhYmxlIHRoaXMgc2NyaXB0IQo9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0K"
-          $decodedNotice = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($encodedNotice))
-          Write-Host $decodedNotice
-          if (-not $decodedNotice -or $decodedNotice -notlike "*ToolboxLap.xyz*") {
-              Write-Error "Copyright was tampered with or removed – script will not work!"
-              exit 1
-          }
+      - name: Checkout (optional)
+        uses: actions/checkout@v4
 
-      - name: Core RDP Settings
+      - name: Decode and print ownership notice (Bash)
+        shell: bash
         run: |
-          $folderPath = "D:\link subscribe youtube channel"
-          if (-Not (Test-Path -Path $folderPath)) {
-              New-Item -Path $folderPath -ItemType Directory
-              Write-Host "Folder 'link subscribe youtube channel' has been created in D drive."
-          } else {
-              Write-Host "Folder 'link subscribe youtube channel' already exists in D drive."
-          }
+          encodedNotice="Cj09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PQogQ29weXJpZ2h0IMKpIDIwMjUgVG9vbGJveExhcC54eXogfCBodHRwczovL3d3dy50b29sYm94bGFwLnh5ei8KIEFsbCByaWdodHMgcmVzZXJ2ZWQuIERvIG5vdCByZW1vdmUgb3IgbW9kaWZ5IGNvcHlyaWdodCB0ZXh0LgogWW91VHViZTogaHR0cHM6Ly93d3cueW91dHViZS5jb20vY2hhbm5lbC9VQ0RUNGZzOUp3cm5RSVhQclhYOHlIZVEKIEZhY2Vib29rOiBodHRwczovL3d3dy5mYWNlYm9vay5jb20vcHJvZmlsZS5waHA/aWQ9NjE1Njc4OTY2OTI5OTQKIEFueSBjaGFuZ2VzIHdpbGwgYXV0b21hdGljYWxseSBkaXNhYmxlIHRoaXMgc2NyaXB0IQo9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0K"
+          decodedNotice=$(printf "%s" "$encodedNotice" | base64 --decode 2>/dev/null || true)
+          if [ -z "$decodedNotice" ]; then
+            echo "Failed to decode or notice empty"
+            exit 1
+          fi
+          echo "$decodedNotice"
+          # optional check for domain presence
+          if [[ "$decodedNotice" != *"ToolboxLap.xyz"* ]]; then
+            echo "Copyright was tampered with or removed – workflow will exit"
+            exit 1
+          fi
 
-      - name: Configure Core RDP Settings
+      - name: Create folder (in runner's home)
+        shell: bash
         run: |
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0 -Force
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "SecurityLayer" -Value 0 -Force
-          netsh advfirewall firewall delete rule name="RDP-Tailscale"
-          netsh advfirewall firewall add rule name="RDP-Tailscale" dir=in action=allow protocol=TCP localport=3389
-          Restart-Service -Name TermService -Force
+          target="$HOME/link subscribe youtube channel"
+          if [ ! -d "$target" ]; then
+            mkdir -p "$target"
+            echo "Created folder: $target"
+          else
+            echo "Folder already exists: $target"
+          fi
 
-      - name: Create RDP User with Static Password
+      - name: Configure macOS basic settings (attempt)
+        shell: bash
         run: |
-          $password = "admin@123"
-          $securePass = ConvertTo-SecureString $password -AsPlainText -Force
+          echo "Attempting to enable Remote Login (SSH) locally..."
+          # Enable SSH (Remote Login) — may require privileged runner or be disabled on hosted runners
+          if sudo systemsetup -getremotelogin | grep -qi "On"; then
+            echo "Remote Login already enabled"
+          else
+            sudo systemsetup -setremotelogin on || echo "Couldn't enable Remote Login (may be restricted)"
+          fi
 
-          if (-not (Get-LocalUser -Name "TOOLBOXLAP" -ErrorAction SilentlyContinue)) {
-              New-LocalUser -Name "TOOLBOXLAP" -Password $securePass -AccountNeverExpires
-          }
-          Add-LocalGroupMember -Group "Administrators" -Member "TOOLBOXLAP"
-          Add-LocalGroupMember -Group "Remote Desktop Users" -Member "TOOLBOXLAP"
-          echo "RDP_CREDS=User: TOOLBOXLAP | Password: $password" >> $env:GITHUB_ENV
-          if (-not (Get-LocalUser -Name "TOOLBOXLAP")) {
-              Write-Error "User creation failed"
-              exit 1
-          }
+          # Show current firewall status (macOS PF/Application Firewall)
+          echo "Firewall (Application) status:"
+          sudo /usr/libexec/ApplicationFirewall/socketfilterfw --getglobalstate || true
 
-      - name: Install Tailscale
+          echo "Note: Opening GUI ports (VNC) or persistently exposing runner to the internet is not supported on GitHub-hosted runners."
+
+      - name: Create local user (best-effort; may fail)
+        shell: bash
         run: |
-          $tsUrl = "https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi"
-          $installerPath = "$env:TEMP\tailscale.msi"
-          Invoke-WebRequest -Uri $tsUrl -OutFile $installerPath
-          Start-Process msiexec.exe -ArgumentList "/i", "`"$installerPath`"", "/quiet", "/norestart" -Wait
-          Remove-Item $installerPath -Force
+          USERNAME="TOOLBOXLAP"
+          PASSWORD="admin@123"
+          # Check if user exists
+          if id -u "$USERNAME" >/dev/null 2>&1; then
+            echo "User $USERNAME already exists"
+          else
+            echo "Attempting to create user $USERNAME (may require sudo and may fail on hosted runners)..."
+            # Create user (macOS Big Sur+ compatible)
+            # uid/gid auto selection; adjust if needed
+            sudo sysadminctl -addUser "$USERNAME" -fullName "Toolbox Lap" -password "$PASSWORD" || echo "sysadminctl failed or not permitted"
+          fi
+          # Add to admin group if possible
+          if dscl . -read /Groups/admin GroupMembership | grep -q "$USERNAME"; then
+            echo "$USERNAME is already admin"
+          else
+            sudo dseditgroup -o edit -a "$USERNAME" -t user admin || echo "Failed to add to admin group (may be restricted)"
+          fi
 
-      - name: Establish Tailscale Connection
+      - name: Install Tailscale (macOS)
+        shell: bash
         run: |
-          & "$env:ProgramFiles\Tailscale\tailscale.exe" up --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} --hostname=gh-runner-$env:GITHUB_RUN_ID
-          $tsIP = $null
-          $retries = 0
-          while (-not $tsIP -and $retries -lt 10) {
-              $tsIP = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4
-              Start-Sleep -Seconds 5
-              $retries++
-          }
-          if (-not $tsIP) {
-              Write-Error "Tailscale IP not assigned. Exiting."
-              exit 1
-          }
-          echo "TAILSCALE_IP=$tsIP" >> $env:GITHUB_ENV
+          echo "Installing Tailscale (homebrew cask if available)..."
+          # Try Homebrew first
+          if command -v brew >/dev/null 2>&1; then
+            brew install --cask tailscale || true
+          else
+            echo "Homebrew not found — attempting to download tailscale pkg"
+            PKG_URL="https://pkgs.tailscale.com/stable/tailscale-stable.pkg"
+            TMPPKG="/tmp/tailscale-stable.pkg"
+            curl -L -o "$TMPPKG" "$PKG_URL" || echo "Download failed"
+            sudo installer -pkg "$TMPPKG" -target / || echo "installer failed or restricted"
+            rm -f "$TMPPKG"
+          fi
+          echo "Tailscale install attempt finished."
 
-      - name: Verify RDP Accessibility
+      - name: Try to start Tailscale and get IP (best-effort)
+        shell: bash
+        env:
+          TAILSCALE_AUTH_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
         run: |
-          Write-Host "Tailscale IP: $env:TAILSCALE_IP"
-          $testResult = Test-NetConnection -ComputerName $env:TAILSCALE_IP -Port 3389
-          if (-not $testResult.TcpTestSucceeded) {
-              Write-Error "TCP connection to RDP port 3389 failed"
-              exit 1
-          }
-          Write-Host "TCP connectivity successful!"
+          if [ -x "/Applications/Tailscale.app/Contents/MacOS/Tailscale" ]; then
+            TSCMD="/Applications/Tailscale.app/Contents/MacOS/Tailscale"
+          elif command -v tailscale >/dev/null 2>&1; then
+            TSCMD="$(command -v tailscale)"
+          else
+            echo "tailscale binary not found"
+            exit 0
+          fi
 
-      - name: Maintain Connection
+          echo "Attempting 'tailscale up' with provided auth key (if any). This may fail due to runner restrictions."
+          if [ -n "$TAILSCALE_AUTH_KEY" ]; then
+            sudo "$TSCMD" up --authkey="$TAILSCALE_AUTH_KEY" --hostname="gh-runner-$GITHUB_RUN_ID" || echo "tailscale up failed or restricted"
+          else
+            echo "No TAILSCALE_AUTH_KEY set — skipping 'tailscale up'."
+          fi
+
+          # Try to get IPv4
+          if command -v tailscale >/dev/null 2>&1; then
+            tsip=$(tailscale ip -4 2>/dev/null || true)
+            echo "TAILSCALE_IP=$tsip"
+            echo "TAILSCALE_IP=$tsip" >> $GITHUB_ENV
+          fi
+
+      - name: Verify connectivity to port 22 (SSH) — best-effort
+        shell: bash
         run: |
-          $ownershipNotice = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String("Cj09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PQogQ29weXJpZ2h0IMKpIDIwMjUgVG9vbGJveExhcC54eXogfCBodHRwczovL3d3dy50b29sYm94bGFwLnh5ei8KIEFsbCByaWdodHMgcmVzZXJ2ZWQuIERvIG5vdCByZW1vdmUgb3IgbW9kaWZ5IGNvcHlyaWdodCB0ZXh0LgogWW91VHViZTogaHR0cHM6Ly93d3cueW91dHViZS5jb20vY2hhbm5lbC9VQ0RUNGZzOUp3cm5RSVhQclhYOHlIZVEKIEZhY2Vib29rOiBodHRwczovL3d3dy5mYWNlYm9vay5jb20vcHJvZmlsZS5waHA/aWQ9NjE1Njc4OTY2OTI5OTQKIEFueSBjaGFuZ2VzIHdpbGwgYXV0b21hdGljYWxseSBkaXNhYmxlIHRoaXMgc2NyaXB0IQo9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0K"))
-          Write-Host $ownershipNotice
-          Write-Host "`n=== RDP ACCESS ==="
-          Write-Host "Address: $env:TAILSCALE_IP"
-          Write-Host "Username: TOOLBOXLAP"
-          Write-Host "Password: admin@123"
-          Write-Host "Powered by https://www.toolboxlap.xyz/"
-          Write-Host "========= All rights reserved =========`n"
-          while ($true) {
-              Write-Host "[$(Get-Date)] RDP Active - Use Ctrl+C in workflow to terminate"
-              Start-Sleep -Seconds 300
-          }
+          if [ -z "$TAILSCALE_IP" ]; then
+            echo "No Tailscale IP available; skipping connectivity test"
+            exit 0
+          fi
+          echo "Testing TCP port 22 to $TAILSCALE_IP"
+          # Use nc (netcat) if available
+          if command -v nc >/dev/null 2>&1; then
+            nc -z -w 5 "$TAILSCALE_IP" 22 && echo "Port 22 reachable" || (echo "Port 22 not reachable or blocked" && exit 1)
+          else
+            echo "nc not available; cannot test TCP port"
+          fi
+
+      - name: Print final info
+        shell: bash
+        run: |
+          echo "=== RUNTIME INFO ==="
+          echo "Username: TOOLBOXLAP"
+          echo "Password: admin@123"
+          echo "If a Tailscale IP was assigned it is saved in TAILSCALE_IP env var."
+          echo "Reminder: GitHub-hosted mac runners do NOT allow persistent external GUI/RDP access."
